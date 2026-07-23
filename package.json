@@ -15,9 +15,10 @@
   "type": "module",
   "private": "true",
   "dependencies": {
-    "mp4-muxer": "^5.2.2",
     "@tailwindcss/browser": "^4.3.3",
+    "@vercel/analytics": "^2.0.1",
     "jszip": "^3.10.1",
+    "mp4-muxer": "^5.2.2",
     "next": "^16.2.10",
     "pixi-filters": "^6.1.5",
     "pixi.js": "^8.19.0",
