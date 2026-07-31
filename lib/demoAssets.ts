@@ -10,3 +10,12 @@ export const DEMO_ASSETS = Array.from({ length: 12 }, (_, i) => {
     url: `${BASE_PATH}/demo/demo-${n}.jpg`,
   };
 });
+
+export function demoSourceForSlot(index: number) {
+  const source = DEMO_ASSETS[((index % DEMO_ASSETS.length) + DEMO_ASSETS.length) % DEMO_ASSETS.length];
+  return { ...source };
+}
+
+export function isDemoAssetSource(asset: { origin?: string; url?: string }): boolean {
+  return asset.origin === 'demo' || /\/demo\/demo-\d{2}\.jpg(?:[?#].*)?$/.test(asset.url ?? '');
+}
