@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useSceneStore, ASPECTS } from '@/store/useSceneStore';
 import { ControlRow } from './Controls';
 
-const FPS_OPTIONS = [15, 25, 30, 60] as const;
+const FPS_OPTIONS = [30, 60];
 const BG_SOURCES: { id: 'color' | 'image' | 'card'; label: string }[] = [
   { id: 'color', label: 'Color' },
   { id: 'image', label: 'Image' },
@@ -50,7 +50,7 @@ function Collapsible({ title, children }: { title: string; children: React.React
   );
 }
 
-export default function CanvasPanel() {
+export default function CanvasPanel({ is3DMode = false }: { is3DMode?: boolean } = {}) {
   const aspect = useSceneStore((s) => s.aspect);
   const setAspect = useSceneStore((s) => s.setAspect);
   const customW = useSceneStore((s) => s.customW);
@@ -97,33 +97,29 @@ export default function CanvasPanel() {
 
         <div className="ctl-row">
           <label className="ctl-label">FPS</label>
-          <div className="pills pills-fit">
+          <div className="pills">
             {FPS_OPTIONS.map((f) => (
-              <button
-                key={f}
-                type="button"
-                className={`pill ${fps === f ? 'active' : ''}`}
-                aria-pressed={fps === f}
-                onClick={() => setFps(f)}
-              >
-                {f}
-              </button>
+              <button key={f} className={`pill ${fps === f ? 'active' : ''}`} onClick={() => setFps(f)}>{f}</button>
             ))}
           </div>
         </div>
 
-        <div className="ctl-row">
-          <label className="ctl-label">Safe area</label>
-          <div className="segmented">
-            <button className={`seg ${!safeArea ? 'active' : ''}`} onClick={() => safeArea && toggleSafeArea()}>Off</button>
-            <button className={`seg ${safeArea ? 'active' : ''}`} onClick={() => !safeArea && toggleSafeArea()}>On</button>
+        {!is3DMode && (
+          <div className="ctl-row">
+            <label className="ctl-label">Safe area</label>
+            <div className="segmented">
+              <button className={`seg ${!safeArea ? 'active' : ''}`} onClick={() => safeArea && toggleSafeArea()}>Off</button>
+              <button className={`seg ${safeArea ? 'active' : ''}`} onClick={() => !safeArea && toggleSafeArea()}>On</button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
-      <div className="hairline" />
-      <div className="section-body" style={{ paddingTop: 4 }}>
-        <Collapsible title="Background">
+      {!is3DMode && (
+        <>
+          <div className="hairline" />
+          <div className="section-body" style={{ paddingTop: 4 }}>
+            <Collapsible title="Background">
           <div className="ctl-row">
             <label className="ctl-label">Source</label>
             <div className="pills">
@@ -198,6 +194,8 @@ export default function CanvasPanel() {
           </div>
         </Collapsible>
       </div>
+      </>
+      )}
     </>
   );
 }

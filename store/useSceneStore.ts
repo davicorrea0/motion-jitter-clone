@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { defaultsFor, easingFor, templates } from '@/templates';
 import type { EasingSpec } from '@/lib/easing';
 import type { CropFocus } from '@/lib/crop';
-import { DEMO_ASSETS, demoSourceForSlot, isDemoAssetSource } from '@/lib/demoAssets';
+import { DEMO_ASSETS } from '@/lib/demoAssets';
 import { idbPut, idbGet, idbDelete } from '@/lib/assetDb';
 import { DEFAULT_TRACK_TRANSFORM, TRACK_END, type BlendMode, type MotionTrack } from '@/lib/tracks';
 
@@ -30,7 +30,7 @@ export interface AssetItem {
   url: string;
   visible: boolean;
   kind?: 'image' | 'video'; // media type; undefined = image (backward compatible)
-  origin?: 'demo' | 'remote' | 'upload'; // demos preview empty slots; upload bytes live in IndexedDB
+  origin?: 'remote' | 'upload'; // 'upload' bytes live in IndexedDB and restore on reload
   crop?: CropFocus; // cover-fit focal point 0..1 per axis; undefined = centre
 }
 
@@ -277,7 +277,7 @@ function initialSceneState() {
     audioUrl: null,
 
     // start populated with the bundled demo set so every template shows real motion
-    assets: DEMO_ASSETS.map((a) => ({ ...a, id: nid('asset'), visible: true, origin: 'demo' as const })),
+    assets: DEMO_ASSETS.map((a) => ({ ...a, id: nid('asset'), visible: true, origin: 'remote' as const })),
     cardShape: 'auto',
     videoEnd: 'loop' as const,
     effects: [],
@@ -384,9 +384,7 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       if (!t) return {};
       // An empty list means "all" — materialize it before removing one, or the
       // first click would read as adding to nothing.
-      const current = t.assetIds.length > 0
-        ? t.assetIds
-        : s.assets.filter((asset) => asset.origin !== 'demo').map((asset) => asset.id);
+      const current = t.assetIds.length > 0 ? t.assetIds : s.assets.map((a) => a.id);
       const next = current.includes(assetId)
         ? current.filter((x) => x !== assetId)
         : [...current, assetId];
@@ -396,15 +394,7 @@ export const useSceneStore = create<SceneState>((set, get) => ({
   setFrame: (frame) => set(() => ({ frame })),
   setPlaying: (p) => set(() => ({ playing: p })),
 
-  setFps: (fps) => set((s) => {
-    const nextFps = Math.max(1, Math.round(fps));
-    const currentTime = s.frame / Math.max(1, s.fps);
-    const maxFrame = Math.max(0, Math.round(s.duration * nextFps) - 1);
-    return {
-      fps: nextFps,
-      frame: Math.min(maxFrame, Math.round(currentTime * nextFps)),
-    };
-  }),
+  setFps: (fps) => set(() => ({ fps })),
   setAspect: (aspect) =>
     set(() => ({ aspect, ...dimsFor(aspect) })),
   // Custom canvas: preview stays normalized to BASE on the longest edge so
@@ -428,49 +418,39 @@ export const useSceneStore = create<SceneState>((set, get) => ({
   setLogo: (patch) => set((s) => ({ logo: { ...s.logo, ...patch } })),
   setAudioUrl: (url) => set(() => ({ audioUrl: url })),
 
-  addAssets: (items) => set((s) => {
-    const next = s.assets.slice();
-    for (const { blob, ...item } of items) {
-      const demoIndex = next.findIndex((asset) => asset.origin === 'demo');
-      const origin: 'remote' | 'upload' = blob || item.url.startsWith('blob:') ? 'upload' : 'remote';
-      if (demoIndex >= 0) {
-        const previous = next[demoIndex];
-        if (blob) idbPut(previous.id, blob).catch(() => {});
-        next[demoIndex] = { ...previous, ...item, visible: true, origin, crop: undefined };
-      } else {
-        const id = nid('asset');
-        if (blob) idbPut(id, blob).catch(() => {});
-        next.push({ ...item, id, visible: true, origin });
-      }
-    }
-    return { assets: next };
-  }),
+  addAssets: (items) => {
+    const added: AssetItem[] = items.map(({ blob, ...it }) => {
+      const id = nid('asset');
+      const origin: 'remote' | 'upload' = blob || it.url.startsWith('blob:') ? 'upload' : (it.origin ?? 'remote');
+      if (blob) idbPut(id, blob).catch(() => { /* quota — this upload won't persist */ });
+      return { ...it, id, visible: true, origin };
+    });
+    set((s) => ({ assets: [...s.assets, ...added] }));
+  },
   // Set the image at a specific slot; appends if the slot is the next empty one.
   // A new image gets a fresh (centre) crop — the old focal point rarely fits it.
   replaceAssetAt: (index, item) => {
     const { blob, ...it } = item;
-    const origin: 'remote' | 'upload' = blob || it.url.startsWith('blob:') ? 'upload' : 'remote';
+    const origin: 'remote' | 'upload' = blob || it.url.startsWith('blob:') ? 'upload' : (it.origin ?? 'remote');
     set((s) => {
       const next = s.assets.slice();
-      while (next.length <= index) {
-        next.push({ ...demoSourceForSlot(next.length), id: nid('asset'), visible: true, origin: 'demo' });
+      if (index < next.length) {
+        const prev = next[index];
+        if (prev.origin === 'upload') idbDelete(prev.id).catch(() => {}); // drop the replaced upload's bytes
+        if (blob) idbPut(prev.id, blob).catch(() => {});                  // store new bytes under the kept id
+        next[index] = { ...prev, name: it.name, url: it.url, kind: it.kind, origin, crop: undefined };
+      } else {
+        const id = nid('asset');
+        if (blob) idbPut(id, blob).catch(() => {});
+        next.push({ ...it, id, visible: true, origin });
       }
-      const prev = next[index];
-      if (prev.origin === 'upload') idbDelete(prev.id).catch(() => {});
-      if (blob) idbPut(prev.id, blob).catch(() => {});
-      next[index] = { ...prev, name: it.name, url: it.url, kind: it.kind, origin, visible: true, crop: undefined };
       return { assets: next };
     });
   },
   removeAsset: (id) => {
-    const current = get().assets;
-    const index = current.findIndex((asset) => asset.id === id);
-    const a = current[index];
+    const a = get().assets.find((x) => x.id === id);
     if (a?.origin === 'upload') idbDelete(id).catch(() => {});
-    if (index < 0 || a?.origin === 'demo') return;
-    set((s) => ({ assets: s.assets.map((asset, slot) => slot === index
-      ? { ...demoSourceForSlot(slot), id: asset.id, visible: true, origin: 'demo' as const }
-      : asset) }));
+    set((s) => ({ assets: s.assets.filter((x) => x.id !== id) }));
   },
   toggleAsset: (id) =>
     set((s) => ({
@@ -485,14 +465,7 @@ export const useSceneStore = create<SceneState>((set, get) => ({
     }),
   clearAssets: () => {
     for (const a of get().assets) if (a.origin === 'upload') idbDelete(a.id).catch(() => {});
-    set((s) => ({
-      assets: Array.from({ length: Math.max(DEMO_ASSETS.length, s.assets.length) }, (_, index) => ({
-        ...demoSourceForSlot(index),
-        id: s.assets[index]?.id ?? nid('asset'),
-        visible: true,
-        origin: 'demo' as const,
-      })),
-    }));
+    set(() => ({ assets: [] }));
   },
   setAssetCrop: (id, crop) =>
     set((s) => ({ assets: s.assets.map((a) => (a.id === id ? { ...a, crop } : a)) })),
@@ -506,16 +479,7 @@ export const useSceneStore = create<SceneState>((set, get) => ({
   // added/removed controls.
   hydrate: (partial) =>
     set((s) => {
-      // Demo slots are re-pointed at the CURRENT demo source rather than kept at
-      // whatever URL the scene was saved with. A demo asset is a placeholder for
-      // "slot n", not a specific file: a scene saved under one BASE_PATH and
-      // opened under another (local vs the Pages build's path prefix) would
-      // otherwise hold URLs that 404. Identity and crop survive; only the source
-      // is refreshed.
-      const assets = (partial.assets ?? s.assets).map((asset, index) => isDemoAssetSource(asset)
-        ? { ...asset, ...demoSourceForSlot(index), origin: 'demo' as const, visible: true }
-        : asset);
-      const realAssetIds = new Set(assets.filter((asset) => asset.origin !== 'demo').map((asset) => asset.id));
+      const assets = partial.assets ?? s.assets;
       seedIdCounter(assets);
 
       // Scenes saved before motion tracks existed carry only the flat
@@ -545,7 +509,6 @@ export const useSceneStore = create<SceneState>((set, get) => ({
           values: { ...defaultsFor(t.templateId), ...(t.values ?? {}) },
           easing: t.easing ?? easingFor(t.templateId),
           transform: { ...DEFAULT_TRACK_TRANSFORM, ...(t.transform ?? {}) },
-          assetIds: (t.assetIds ?? []).filter((id) => realAssetIds.has(id)),
         }));
       seedIdCounter(tracks);
 
@@ -557,7 +520,6 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       return {
         ...s,
         ...partial,
-        assets,
         ...projectActive(safeTracks, activeId),
         frame: 0, // always start at the clip head
       };

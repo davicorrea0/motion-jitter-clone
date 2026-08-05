@@ -1,12 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useSceneStore } from '@/store/useSceneStore';
 import { getRendererInstance } from '@/lib/rendererInstance';
 import { BASE_PATH, IS_STATIC_EXPORT } from '@/lib/paths';
 import { supportsWebCodecs, encodeMp4WebCodecs } from '@/lib/webcodecsExport';
-import { countDemoSlotsInUse } from '@/lib/demoUsage';
-import { BackIcon, ExportIcon, PauseIcon, PlayIcon } from '@/components/EditorIcons';
 
 // An export artifact: server files carry a /exports url; WebCodecs results are
 // local Blobs (url is an object URL for the download link).
@@ -36,13 +34,6 @@ function targetFor(res: Res, s: { width: number; height: number; customW: number
   return { k, width: tw - (tw % 2), height: th - (th % 2) };
 }
 
-function formatTime(seconds: number) {
-  const safe = Math.max(0, seconds);
-  const minutes = Math.floor(safe / 60);
-  const rest = safe - minutes * 60;
-  return `${minutes}:${rest.toFixed(1).padStart(4, '0')}`;
-}
-
 async function post(body: any) {
   const res = await fetch(`${BASE_PATH}/api/export`, {
     method: 'POST',
@@ -60,13 +51,6 @@ export default function ExportDialog({ onClose }: { onClose: () => void }) {
   const height = useSceneStore((s) => s.height);
   const customW = useSceneStore((s) => s.customW);
   const customH = useSceneStore((s) => s.customH);
-  const frame = useSceneStore((s) => s.frame);
-  const fps = useSceneStore((s) => s.fps);
-  const duration = useSceneStore((s) => s.duration);
-  const playing = useSceneStore((s) => s.playing);
-  const setPlaying = useSceneStore((s) => s.setPlaying);
-  const demoSlots = useSceneStore(countDemoSlotsInUse);
-  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const [format, setFormat] = useState<Fmt>('mp4');
   const [res, setRes] = useState<Res>('1080p');
   const [phase, setPhase] = useState<Phase>('idle');
@@ -78,31 +62,6 @@ export default function ExportDialog({ onClose }: { onClose: () => void }) {
   const [saving, setSaving] = useState(false);
   const [savedTo, setSavedTo] = useState<string | null>(null);
   const [saveErr, setSaveErr] = useState('');
-  const [confirmDemo, setConfirmDemo] = useState(false);
-
-  // The mobile export page mirrors the existing renderer instead of creating
-  // a second Pixi/Three instance. Desktop hides this canvas completely.
-  useEffect(() => {
-    if (!window.matchMedia('(max-width: 767px)').matches) return;
-    let raf = 0;
-    const draw = () => {
-      const target = previewCanvasRef.current;
-      const source = getRendererInstance()?.extractCanvas();
-      if (target && source && source.width > 0 && source.height > 0) {
-        const scale = Math.min(1, 1200 / Math.max(source.width, source.height));
-        const nextWidth = Math.max(1, Math.round(source.width * scale));
-        const nextHeight = Math.max(1, Math.round(source.height * scale));
-        if (target.width !== nextWidth || target.height !== nextHeight) {
-          target.width = nextWidth;
-          target.height = nextHeight;
-        }
-        target.getContext('2d')?.drawImage(source, 0, 0, nextWidth, nextHeight);
-      }
-      raf = requestAnimationFrame(draw);
-    };
-    raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
-  }, []);
 
   // File System Access API — Chromium (Edge/Chrome) only. Lets the user pick a
   // destination folder; falls back to the download links when unavailable.
@@ -153,7 +112,6 @@ export default function ExportDialog({ onClose }: { onClose: () => void }) {
   };
 
   const run = async () => {
-    setConfirmDemo(false);
     const s = store.getState();
     const renderer = getRendererInstance();
     if (!renderer) { setErr('Renderer not ready'); setPhase('error'); return; }
@@ -213,13 +171,19 @@ export default function ExportDialog({ onClose }: { onClose: () => void }) {
 
       renderer.setCaptureScale(target.k); // hi-res backing store; layout untouched
       try {
+        const BATCH_SIZE = 15;
+        let batch: { index: number; dataUrl: string }[] = [];
         for (let f = 0; f < totalFrames; f++) {
           await renderer.seekVideos?.(f);                 // frame-accurate video cards (no-op without video)
           const dataUrl = renderer.captureFrame(f);       // time = frame counter, never wall-clock
-          await post({ action: 'frame', sessionId, index: f, dataUrl });
+          batch.push({ index: f, dataUrl });
+          if (batch.length >= BATCH_SIZE || f === totalFrames - 1) {
+            await post({ action: 'frames', sessionId, frames: batch });
+            batch = [];
+          }
           setCaptured(f + 1);
           // yield to keep UI responsive
-          if (f % 5 === 0) await new Promise((r) => setTimeout(r, 0));
+          if (f % 10 === 0) await new Promise((r) => setTimeout(r, 0));
         }
       } finally {
         renderer.endVideoExport?.();                      // restore original video sources
@@ -258,30 +222,14 @@ export default function ExportDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="modal-backdrop export-backdrop" onClick={onClose}>
-      <div className="modal export-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <button className="icon-btn export-mobile-back" onClick={onClose} aria-label="Back to editor"><BackIcon /></button>
           <span>Export</span>
           <button className="icon-btn" onClick={onClose}>✕</button>
         </div>
 
-        <div className="export-mobile-preview" aria-label="Export preview">
-          <canvas ref={previewCanvasRef} />
-        </div>
-
-        <div className="export-mobile-transport">
-          <button
-            className="export-mobile-play"
-            onClick={() => setPlaying(!playing)}
-            aria-label={playing ? 'Pause preview' : 'Play preview'}
-          >
-            {playing ? <PauseIcon /> : <PlayIcon />}
-          </button>
-          <span><b>{formatTime(frame / Math.max(1, fps))}</b> / {formatTime(duration)}</span>
-        </div>
-
-        <div className="modal-body export-modal-body">
+        <div className="modal-body">
           {IS_STATIC_EXPORT ? (
           <div className="export-static-note">
             <p>
@@ -300,12 +248,9 @@ npm run dev`}</code></pre>
           ) : (
           <>
           <div className="ctl-row">
-            <label className="ctl-label">
-              <span className="export-label-desktop">Format</span>
-              <span className="export-label-mobile">Output</span>
-            </label>
+            <label className="ctl-label">Format</label>
             <div className="ctl-input">
-              <div className="pills pills-fit">
+              <div className="pills">
                 {(['mp4', 'gif', 'both'] as Fmt[]).map((f) => (
                   <button key={f} className={`pill ${format === f ? 'active' : ''}`} onClick={() => setFormat(f)}>{f.toUpperCase()}</button>
                 ))}
@@ -316,7 +261,7 @@ npm run dev`}</code></pre>
           <div className="ctl-row">
             <label className="ctl-label">Resolution</label>
             <div className="ctl-input">
-              <div className="pills pills-fit">
+              <div className="pills">
                 {(Object.keys(RES_SHORT) as Exclude<Res, 'exact'>[]).map((r) => (
                   <button key={r} className={`pill ${res === r ? 'active' : ''}`} onClick={() => setRes(r)}>{RES_LABEL[r]}</button>
                 ))}
@@ -336,23 +281,8 @@ npm run dev`}</code></pre>
             })()}
           </div>
 
-          {phase === 'idle' && !confirmDemo && (
-            <button className="btn primary full export-primary-action" onClick={() => demoSlots > 0 ? setConfirmDemo(true) : run()}>
-              <ExportIcon size={16} />
-              <span className="export-action-desktop">Start export</span>
-              <span className="export-action-mobile">Export</span>
-            </button>
-          )}
-
-          {phase === 'idle' && confirmDemo && (
-            <div className="export-demo-warning" role="alert">
-              <strong>{demoSlots} demo {demoSlots === 1 ? 'slot is' : 'slots are'} still in use</strong>
-              <p>Demo images will appear in the exported file unless you replace them in Media.</p>
-              <div className="export-demo-actions">
-                <button className="btn" onClick={() => setConfirmDemo(false)}>Cancel</button>
-                <button className="btn primary" onClick={run}>Export anyway</button>
-              </div>
-            </div>
+          {phase === 'idle' && (
+            <button className="btn primary full" onClick={run}>Start export</button>
           )}
 
           {phase === 'preparing' && <div className="progress"><span>Preparing videos…</span></div>}

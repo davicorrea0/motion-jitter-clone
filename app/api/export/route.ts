@@ -91,6 +91,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
+    if (action === 'frames') {
+      const { sessionId, frames } = body;
+      if (!UUID_RE.test(String(sessionId)) || !Array.isArray(frames)) {
+        return NextResponse.json({ error: 'bad params' }, { status: 400 });
+      }
+      const dir = sessionDir(sessionId);
+      await Promise.all(
+        frames.map(async (item: any) => {
+          const idx = Number(item.index);
+          if (Number.isInteger(idx) && idx >= 0 && idx <= 99999) {
+            const base64 = String(item.dataUrl).replace(/^data:image\/\w+;base64,/, '');
+            const file = path.join(dir, `frame_${String(idx).padStart(5, '0')}.jpg`);
+            await fs.writeFile(file, Buffer.from(base64, 'base64'));
+          }
+        })
+      );
+      return NextResponse.json({ ok: true });
+    }
+
     if (action === 'encode') {
       const { sessionId, format, audio, width, height } = body;
       const fps = Number(body.fps);

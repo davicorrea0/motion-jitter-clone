@@ -1,7 +1,6 @@
 import type { Template } from '@/lib/types';
 import { smooth, clamp } from '@/lib/motion';
 import { variant } from './variant';
-import { tiltPointCanvas } from '@/lib/tilt3d';
 
 const BASE = 340;
 const TEX_RATIO = 480 / 600; // house placeholder/texture proportion
@@ -97,13 +96,9 @@ const reveal: Template = {
     const scale = ph / BASE;
     const scaleX = (pw / ph) / TEX_RATIO;
 
-    const layoutPoint = tiltPointCanvas(
-      { x: panel.x * ctx.width, y: panel.y * ctx.height, z: 0 },
-      { roll: v.tilt },
-    );
     return {
-      x: layoutPoint.x + v.offset.x,
-      y: layoutPoint.y + v.offset.y,
+      x: panel.x * ctx.width + v.offset.x,
+      y: panel.y * ctx.height + v.offset.y,
       scale: scale * (0.94 + 0.06 * vis),             // slight settle as it lands
       scaleX,
       rotation: (v.tilt * Math.PI) / 180,
