@@ -354,6 +354,9 @@ function XYPadControl({ def, value, onChange }: RowProps) {
   // Which axis a shift-drag committed to, and whether shift was held last move.
   const axis = useRef<'x' | 'y' | null>(null);
   const wasLocked = useRef(false);
+  // Where the drag began, kept apart from the shift anchor: taking shift after
+  // travelling already tells us the direction, so the lock can bite at once.
+  const press = useRef<{ x: number; y: number } | null>(null);
   const range = def.max ?? 400;
   const v = value ?? { x: 0, y: 0 };
   const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
@@ -363,9 +366,16 @@ function XYPadControl({ def, value, onChange }: RowProps) {
     if (!el) return;
     const rect = el.getBoundingClientRect();
     let px = clientX, py = clientY;
-    // Taking shift mid-drag re-anchors on the spot: the line starts from where
-    // the hand is, instead of yanking the value back to the press point.
-    if (lock && !wasLocked.current) { anchor.current = { x: clientX, y: clientY }; axis.current = null; }
+    // The anchor exists only to read the drag's direction; the line itself runs
+    // through zero.
+    if (lock && !wasLocked.current) {
+      anchor.current = { x: clientX, y: clientY };
+      // Already moving when shift arrives? Then the direction is known and the
+      // axis commits on this very frame — no free frame slipping through.
+      const p = press.current;
+      const pdx = p ? Math.abs(clientX - p.x) : 0, pdy = p ? Math.abs(clientY - p.y) : 0;
+      axis.current = Math.max(pdx, pdy) > 6 ? (pdx >= pdy ? 'x' : 'y') : null;
+    }
     if (!lock) axis.current = null;
     wasLocked.current = lock;
     const from = anchor.current;
@@ -374,9 +384,14 @@ function XYPadControl({ def, value, onChange }: RowProps) {
       // Commit to an axis once the drag clears 6px, then STAY on it. Re-deciding
       // every move made a near-diagonal drag flip axis frame to frame.
       if (!axis.current && Math.max(dx, dy) > 6) axis.current = dx >= dy ? 'x' : 'y';
-      if (axis.current === 'x') py = from.y;
-      else if (axis.current === 'y') px = from.x;
-      else { px = from.x; py = from.y; }
+      // Shift travels the ZERO axis: a horizontal drag leaves y at exactly 0,
+      // not at whatever the press happened to land on. Pinning to the anchor
+      // gave a straight line that still read -38 on the other component, which
+      // is not the line anyone wants from a pad centred on zero.
+      if (axis.current === 'x') py = rect.top + rect.height / 2;
+      else if (axis.current === 'y') px = rect.left + rect.width / 2;
+      // before the axis is chosen the drag stays free, so engaging shift does
+      // not flick the dot to the centre and back
     }
     // A captured pointer reports moves well outside the pad; without this the
     // value ran past ±range and the dot left the square entirely.
@@ -399,14 +414,15 @@ function XYPadControl({ def, value, onChange }: RowProps) {
           try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* no live pointer: nothing to capture */ }
           pressed.current = true;
           anchor.current = { x: e.clientX, y: e.clientY };
+          press.current = { x: e.clientX, y: e.clientY };
           axis.current = null;
           setFromEvent(e.clientX, e.clientY, e.shiftKey);
         }}
         // shift is read per move, so it can be taken and released mid-drag
         onPointerMove={(e) => { if (pressed.current && e.buttons === 1) setFromEvent(e.clientX, e.clientY, e.shiftKey); }}
-        onPointerUp={() => { pressed.current = false; anchor.current = null; axis.current = null; wasLocked.current = false; }}
-        onPointerCancel={() => { pressed.current = false; anchor.current = null; axis.current = null; wasLocked.current = false; }}
-        onLostPointerCapture={() => { pressed.current = false; anchor.current = null; axis.current = null; wasLocked.current = false; }}
+        onPointerUp={() => { pressed.current = false; anchor.current = null; press.current = null; axis.current = null; wasLocked.current = false; }}
+        onPointerCancel={() => { pressed.current = false; anchor.current = null; press.current = null; axis.current = null; wasLocked.current = false; }}
+        onLostPointerCapture={() => { pressed.current = false; anchor.current = null; press.current = null; axis.current = null; wasLocked.current = false; }}
       >
         <svg className="xypad-grid" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
           {PAD_GRID.map((p) => <line key={`v${p}`} className="xypad-line" x1={p} y1={0} x2={p} y2={100} />)}
