@@ -53,6 +53,15 @@ for (const effect of effectList) {
   check(Array.isArray(effect.controls), id, 'controls nao e uma lista');
   check(!!effect.shader?.fragment, id, 'shader.fragment ausente');
   check(typeof effect.shader?.uniforms === 'function', id, 'shader.uniforms nao e funcao');
+
+  // O escopo em que o efeito NASCE. So faz sentido declarar 'scene' ou
+  // 'artwork': um id de camada nao existe na hora em que o efeito e escrito, e
+  // guardar `track:` aqui daria um efeito que nasce apontando para uma camada
+  // de outra cena — sem alvo, ele simplesmente nao pinta.
+  const escopo = effect.meta?.defaultScope;
+  check(escopo === undefined || escopo === 'scene' || escopo === 'artwork', id,
+    `meta.defaultScope invalido (${escopo}) — use 'scene', 'artwork', ou nada`);
+
   if (!effect.shader?.fragment) continue;
 
   // ---- the fragment itself ----

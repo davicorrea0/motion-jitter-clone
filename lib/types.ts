@@ -226,8 +226,25 @@ export interface EffectShader {
   uniforms: (values: Record<string, any>, ctx: EffectContext) => Record<string, number | number[]>;
 }
 
+// Onde um efeito age. Guardado como string na cena para sobreviver a
+// serializacao; ausente significa 'scene', que e como toda cena salva antes
+// deste campo se comporta.
+//
+//   'scene'       o quadro composto inteiro, FUNDO INCLUIDO
+//   'artwork'     so os cards; o fundo da cena passa intacto
+//   'track:<id>'  so uma camada
+export type EffectScope = 'scene' | 'artwork' | `track:${string}`;
+
 export interface Effect {
-  meta: { id: string; name: string };
+  meta: {
+    id: string;
+    name: string;
+    // Onde este efeito entra ao ser adicionado. Grao, vinheta e scanlines sao
+    // efeitos de CAMERA e pertencem ao quadro todo. O Wave desloca geometria: no
+    // quadro todo ele arrasta o fundo junto e abre borda vazia, sem ganhar nada,
+    // entao nasce em 'artwork'. E so o ponto de partida — o usuario troca depois.
+    defaultScope?: EffectScope;
+  };
   controls: ControlDef[];
   shader: EffectShader;
 }

@@ -48,11 +48,21 @@ void main(void)
 }`;
 
 
+// O PROGRAMA e por efeito; o FILTRO e por instancia.
+//
+// Antes o filtro inteiro era cacheado pelo id do efeito. Enquanto so existia um
+// escopo isso passava despercebido: duas instancias do mesmo efeito na mesma
+// pilha ja dividiam o bloco de uniforms e a ultima a escrever vencia. Com
+// escopo por camada a colisao deixa de ser hipotetica — o uso natural e o MESMO
+// efeito em duas camadas com valores diferentes. Um filtro por instancia com o
+// `GlProgram` compartilhado preserva o motivo do cache original: compilar GLSL
+// a cada frame de um slider arrastado faz o slider engasgar.
+const programas = new Map<string, GlProgram>();
 const cache = new Map<string, Filter>();
 
-/** The filter for this effect, compiled once and reused. */
-export function pixiFilterFor(effect: Effect): Filter {
-  const hit = cache.get(effect.meta.id);
+/** O filtro desta INSTANCIA, com o programa do efeito compilado uma vez so. */
+export function pixiFilterFor(effect: Effect, instanceId = effect.meta.id): Filter {
+  const hit = cache.get(instanceId);
   if (hit) return hit;
 
   const uniforms: Record<string, { value: any; type: string }> = {
@@ -66,12 +76,25 @@ export function pixiFilterFor(effect: Effect): Filter {
     };
   }
 
+  let programa = programas.get(effect.meta.id);
+  if (!programa) {
+    programa = GlProgram.from({ vertex: VERTEX, fragment: pixiFragment(effect), name: `fx-${effect.meta.id}` });
+    programas.set(effect.meta.id, programa);
+  }
+
   const filter = new Filter({
-    glProgram: GlProgram.from({ vertex: VERTEX, fragment: pixiFragment(effect), name: `fx-${effect.meta.id}` }),
+    glProgram: programa,
     resources: { fxUniforms: uniforms },
   });
-  cache.set(effect.meta.id, filter);
+  cache.set(instanceId, filter);
   return filter;
+}
+
+/** Solta os filtros de instancias que sairam da cena. */
+export function dropPixiFilters(vivas: Set<string>): void {
+  for (const id of [...cache.keys()]) {
+    if (!vivas.has(id)) cache.delete(id);
+  }
 }
 
 /** Push this frame's control values into the filter. No recompilation. */
@@ -98,4 +121,5 @@ export function applyPixiUniforms(
 /** Test seam: drop the compiled programs (used by the verify script). */
 export function clearPixiFilterCache(): void {
   cache.clear();
+  programas.clear();
 }
