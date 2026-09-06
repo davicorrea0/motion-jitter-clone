@@ -16,7 +16,7 @@
 // everywhere else.
 import { Filter, GlProgram } from 'pixi.js';
 import type { Effect, EffectContext } from '@/lib/types';
-import { pixiFragment } from './glsl';
+import { passesOf, pixiFragment } from './glsl';
 
 // Pixi's default filter vertex shader (v8). Kept verbatim: the filter pipeline
 // depends on the exact varyings and uniform block it declares.
@@ -58,36 +58,43 @@ void main(void)
 // `GlProgram` compartilhado preserva o motivo do cache original: compilar GLSL
 // a cada frame de um slider arrastado faz o slider engasgar.
 const programas = new Map<string, GlProgram>();
-const cache = new Map<string, Filter>();
+const cache = new Map<string, Filter[]>();
 
-/** O filtro desta INSTANCIA, com o programa do efeito compilado uma vez so. */
-export function pixiFilterFor(effect: Effect, instanceId = effect.meta.id): Filter {
+/** Um filtro por PASSE desta instancia, na ordem em que rodam. */
+export function pixiFiltersFor(effect: Effect, instanceId = effect.meta.id): Filter[] {
   const hit = cache.get(instanceId);
   if (hit) return hit;
 
-  const uniforms: Record<string, { value: any; type: string }> = {
-    uResolution: { value: new Float32Array([1, 1]), type: 'vec2<f32>' },
-    uTime: { value: 0, type: 'f32' },
-  };
-  for (const [name, type] of Object.entries(effect.shader.uniformTypes ?? {})) {
-    uniforms[name] = {
-      value: type === 'float' ? 0 : new Float32Array(type === 'vec2' ? 2 : type === 'vec3' ? 3 : 4),
-      type: type === 'float' ? 'f32' : `${type}<f32>`,
+  // Pixi encadeia sozinho: `container.filters = [a, b]` roda `a` para uma
+  // textura intermediaria e `b` sobre ela. Um efeito de varios passes vira
+  // varios filtros em sequencia, sem maquinaria nova.
+  const filtros = passesOf(effect).map((pass, i) => {
+    const uniforms: Record<string, { value: any; type: string }> = {
+      uResolution: { value: new Float32Array([1, 1]), type: 'vec2<f32>' },
+      uTime: { value: 0, type: 'f32' },
     };
-  }
-
-  let programa = programas.get(effect.meta.id);
-  if (!programa) {
-    programa = GlProgram.from({ vertex: VERTEX, fragment: pixiFragment(effect), name: `fx-${effect.meta.id}` });
-    programas.set(effect.meta.id, programa);
-  }
-
-  const filter = new Filter({
-    glProgram: programa,
-    resources: { fxUniforms: uniforms },
+    for (const [name, type] of Object.entries(pass.uniformTypes ?? {})) {
+      uniforms[name] = {
+        value: type === 'float' ? 0 : new Float32Array(type === 'vec2' ? 2 : type === 'vec3' ? 3 : 4),
+        type: type === 'float' ? 'f32' : `${type}<f32>`,
+      };
+    }
+    const chave = `${effect.meta.id}#${i}`;
+    let programa = programas.get(chave);
+    if (!programa) {
+      programa = GlProgram.from({ vertex: VERTEX, fragment: pixiFragment(effect, pass), name: `fx-${chave}` });
+      programas.set(chave, programa);
+    }
+    return new Filter({ glProgram: programa, resources: { fxUniforms: uniforms } });
   });
-  cache.set(instanceId, filter);
-  return filter;
+
+  cache.set(instanceId, filtros);
+  return filtros;
+}
+
+/** Atalho para quem so precisa do primeiro passe (efeitos de passe unico). */
+export function pixiFilterFor(effect: Effect, instanceId = effect.meta.id): Filter {
+  return pixiFiltersFor(effect, instanceId)[0];
 }
 
 /** Solta os filtros de instancias que sairam da cena. */
@@ -97,25 +104,34 @@ export function dropPixiFilters(vivas: Set<string>): void {
   }
 }
 
-/** Push this frame's control values into the filter. No recompilation. */
+/** Push this frame's control values into every pass. No recompilation. */
 export function applyPixiUniforms(
-  filter: Filter,
+  filtros: Filter | Filter[],
   effect: Effect,
   values: Record<string, any>,
   ctx: EffectContext,
 ): void {
-  const u = (filter.resources as any).fxUniforms.uniforms;
-  u.uResolution[0] = ctx.width;
-  u.uResolution[1] = ctx.height;
-  u.uTime = ctx.time;
-  const own = effect.shader.uniforms(values, ctx);
-  for (const [name, value] of Object.entries(own)) {
-    if (Array.isArray(value)) {
-      for (let i = 0; i < value.length; i++) u[name][i] = value[i];
-    } else {
-      u[name] = value;
+  const lista = Array.isArray(filtros) ? filtros : [filtros];
+  const passes = passesOf(effect);
+  lista.forEach((filter, i) => {
+    const pass = passes[i];
+    if (!pass) return;
+    const u = (filter.resources as any).fxUniforms.uniforms;
+    u.uResolution[0] = ctx.width;
+    u.uResolution[1] = ctx.height;
+    u.uTime = ctx.time;
+    // Cada passe tem a SUA funcao de uniforms: e assim que o passe horizontal e
+    // o vertical de um blur separavel se distinguem, sem inventar um "indice do
+    // passe" que o autor do efeito teria de interpretar.
+    const own = pass.uniforms(values, ctx);
+    for (const [name, value] of Object.entries(own)) {
+      if (Array.isArray(value)) {
+        for (let k = 0; k < value.length; k++) u[name][k] = value[k];
+      } else {
+        u[name] = value;
+      }
     }
-  }
+  });
 }
 
 /** Test seam: drop the compiled programs (used by the verify script). */

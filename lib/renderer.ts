@@ -2,7 +2,7 @@ import * as PIXI from 'pixi.js';
 import type { LayerTransform } from '@/lib/types';
 import { getTemplate, layerCountFor } from '@/templates';
 import { getEffect } from '@/effects';
-import { applyPixiUniforms, dropPixiFilters, pixiFilterFor } from '@/effects/adapters/pixi';
+import { applyPixiUniforms, dropPixiFilters, pixiFiltersFor } from '@/effects/adapters/pixi';
 import { useSceneStore, type SceneState } from '@/store/useSceneStore';
 import { resolveEasing } from '@/lib/easing';
 import { assetIndexForSlot, clamp } from '@/lib/motion';
@@ -542,7 +542,10 @@ export class SceneRenderer {
         if (!alvo) continue;   // camada removida: o efeito fica sem alvo, e sem efeito
         try {
           const lista = porAlvo.get(alvo) ?? [];
-          lista.push(pixiFilterFor(def, e.instanceId));
+          // Um efeito pode ser mais de um passe (blur separavel). O Pixi
+          // encadeia uma lista de filtros sozinho, entao os passes entram em
+          // sequencia na mesma lista.
+          lista.push(...pixiFiltersFor(def, e.instanceId));
           porAlvo.set(alvo, lista);
         } catch { /* a shader that will not compile must not take the scene down */ }
       }
@@ -574,7 +577,7 @@ export class SceneRenderer {
       const def = getEffect(e.effectId);
       if (!def) continue;
       try {
-        applyPixiUniforms(pixiFilterFor(def, e.instanceId), def, e.values, ctx);
+        applyPixiUniforms(pixiFiltersFor(def, e.instanceId), def, e.values, ctx);
       } catch { /* a bad uniform must not take the scene down either */ }
     }
   }

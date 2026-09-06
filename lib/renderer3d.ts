@@ -3,7 +3,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { getTemplate, layerCountFor } from '@/templates';
 import { useSceneStore } from '@/store/useSceneStore';
 import { getEffect } from '@/effects';
-import { applyThreeUniforms, disposeThreeMaterials, threeMaterialFor } from '@/effects/adapters/three';
+import { applyThreeUniforms, disposeThreeMaterials, threeMaterialsFor } from '@/effects/adapters/three';
 import { resolveEasing } from '@/lib/easing';
 import { assetIndexForSlot, clamp, lerp } from '@/lib/motion';
 import { loadImage } from '@/lib/textureLoad';
@@ -1198,14 +1198,19 @@ export class SceneRenderer3D implements IRenderer {
           const def = getEffect(active.effectId);
           if (!def) continue;
           try {
-            const material = threeMaterialFor(def, active.instanceId);
-            applyThreeUniforms(material, def, active.values, fxCtx);
-            material.uniforms.map.value = de.texture;
-            this.fxQuad.material = material;
-            this.renderer.setRenderTarget(para);
-            this.renderer.clear(true, false, false);
-            this.renderer.render(this.fxScene, this.composeCam);
-            [de, para] = [para, de];
+            // Um efeito pode ter varios passes (blur separavel); cada passe e um
+            // giro a mais do mesmo ping-pong.
+            const materiais = threeMaterialsFor(def, active.instanceId);
+            for (let i = 0; i < materiais.length; i++) {
+              const material = materiais[i];
+              applyThreeUniforms(material, def, active.values, fxCtx, i);
+              material.uniforms.map.value = de.texture;
+              this.fxQuad.material = material;
+              this.renderer.setRenderTarget(para);
+              this.renderer.clear(true, false, false);
+              this.renderer.render(this.fxScene, this.composeCam);
+              [de, para] = [para, de];
+            }
           } catch { /* a shader that will not compile must not take the scene down */ }
         }
         return de;
