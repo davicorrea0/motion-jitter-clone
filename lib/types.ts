@@ -247,4 +247,13 @@ export interface Effect {
   };
   controls: ControlDef[];
   shader: EffectShader;
+  // Passes ADICIONAIS, rodados em ordem depois de `shader`, cada um lendo a
+  // saida do anterior. Existe para o blur gaussiano, que so e linear se for
+  // SEPARAVEL: um passe horizontal e um vertical. Um blur de raio r feito num
+  // passe unico custa (2r+1)^2 amostras; separado custa 2*(2r+1) — a 20px de
+  // raio, 1681 contra 82.
+  //
+  // `shader` continua sendo o primeiro passe, entao todo efeito de passe unico
+  // segue valendo sem mudar nada.
+  passes?: EffectShader[];
 }
