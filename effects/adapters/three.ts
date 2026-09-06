@@ -17,11 +17,16 @@ const VERTEX = `varying vec2 vUv;
 void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
 
 
+// Um material por INSTANCIA, pelo mesmo motivo do lado Pixi: com escopo por
+// camada o uso natural e o MESMO efeito em duas camadas com valores diferentes,
+// e um material unico faria a segunda sobrescrever os uniforms da primeira.
+// Compilar nao vira custo: o three cacheia o programa pelo codigo do shader,
+// entao dois materiais com o mesmo fragment dividem um programa so.
 const cache = new Map<string, THREE.ShaderMaterial>();
 
-/** The material for this effect's pass, compiled once and reused. */
-export function threeMaterialFor(effect: Effect): THREE.ShaderMaterial {
-  const hit = cache.get(effect.meta.id);
+/** O material do passe desta INSTANCIA de efeito. */
+export function threeMaterialFor(effect: Effect, instanceId = effect.meta.id): THREE.ShaderMaterial {
+  const hit = cache.get(instanceId);
   if (hit) return hit;
 
   const uniforms: Record<string, THREE.IUniform> = {
@@ -45,7 +50,7 @@ export function threeMaterialFor(effect: Effect): THREE.ShaderMaterial {
     vertexShader: VERTEX,
     fragmentShader: threeFragment(effect),
   });
-  cache.set(effect.meta.id, material);
+  cache.set(instanceId, material);
   return material;
 }
 
