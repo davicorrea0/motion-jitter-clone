@@ -81,6 +81,13 @@ const poster: Template = {
   meta: {
     id: 'poster-01', name: 'Poster 01', group: 'Stickers', repeatAssets: true,
     engine: 'webgl', cardAspect: 4 / 5, isNew: true, defaultEasing: { id: 'smooth' },
+    // One sheet peels at a time and the rest of the stack sits flat and, at the
+    // default spread of 0, exactly coincident. The house frame 40 falls in a gap
+    // between two peels: measured, all nine sheets at cornerPeel 0, which drew a
+    // bare rectangle — the same bare rectangle for five of the six presets, since
+    // what separates them is the peel DIRECTION. Frame 5 is the widest of the
+    // peel windows: nine sheets still on the pile, the top one at 0.46.
+    thumbFrame: 5,
   },
   controls: [
     { key: 'count', label: 'Count', type: 'slider', min: 1, max: 12, step: 1, default: 9 },

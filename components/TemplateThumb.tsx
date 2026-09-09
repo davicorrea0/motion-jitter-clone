@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LayerTransform, Template } from '@/lib/types';
-import { defaultsFor, easingFor, layerCountFor } from '@/templates';
+import { defaultsFor, easingFor, layerCountFor, thumbFrameFor } from '@/templates';
 import { resolveEasing } from '@/lib/easing';
 import dynamic from 'next/dynamic';
 
@@ -36,6 +36,8 @@ const TemplateThumb2DGL = dynamic(() => import('@/components/TemplateThumb2DGL')
 // Live template thumbnail: run the template's own transform at a fixed frame
 // and render the resulting card layout as plain divs. Because it uses the real
 // transform + declared defaults, thumbs always match the actual motion.
+// The catalogue's default idle pose; a preset can name its own — see
+// templates/index thumbFrameFor.
 const THUMB_FRAME = 40;              // ~1.3s in — useful idle pose
 // Half the clip rate on purpose: the clip is 240 frames at 30fps (8s), and a
 // thumbnail runs it in 16s instead. At ~180px across, motion at full speed
@@ -114,7 +116,8 @@ function TemplateThumb2D({
   autoPreview?: boolean;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
-  const [frame, setFrame] = useState(THUMB_FRAME);
+  const idleFrame = thumbFrameFor(template.meta.id);
+  const [frame, setFrame] = useState(idleFrame);
   const [isPreviewing, setIsPreviewing] = useState(false);
 
   // Desktop previews follow hover/focus. Mobile groups can opt into autoplay;
@@ -157,7 +160,7 @@ function TemplateThumb2D({
       running = false;
       cancelAnimationFrame(raf);
       setIsPreviewing(false);
-      setFrame(THUMB_FRAME);
+      setFrame(idleFrame);
     };
 
     const reconcile = () => {

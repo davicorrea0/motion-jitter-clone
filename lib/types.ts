@@ -155,6 +155,7 @@ export interface Template {
     catalog3d?: boolean;                      // visual family is genuinely spatial; display as "<group> 3D"
     catalogHidden?: boolean;                  // keep loading old scenes while hiding an unfinished preset from pickers
     cardAspect?: number | 'canvas';           // cover-crop shape: w/h ratio (default 4/5) or the canvas aspect (full-bleed)
+    thumbFrame?: number;                      // catalogue idle pose; see templates/index thumbFrameFor
   };
   controls: ControlDef[];                     // its FULL own set
   // How many layers this template wants, when that is a consequence of the

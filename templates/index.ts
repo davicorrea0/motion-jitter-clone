@@ -179,6 +179,21 @@ export function easingFor(id: string): EasingSpec {
   return { ...spec }; // clone so state never shares the preset reference
 }
 
+// The catalogue's idle pose, in frames of the nominal 240-frame clip.
+//
+// 40 is a good default — ~1.3s in, past whatever entrance a preset opens with.
+// It is not good for every family: a preset whose whole mechanic is one event
+// travelling through a stack can be caught between two events, and then the
+// thumbnail shows a pile of undeformed cards and says nothing. Measured on the
+// Sticker family at frame 40: the six Poster presets all sat at cornerPeel 0
+// with nine sheets stacked at the same point, so five of them drew the SAME
+// flat rectangle. A preset that has such a dead moment names its own frame.
+export const DEFAULT_THUMB_FRAME = 40;
+export function thumbFrameFor(id: string): number {
+  const frame = getTemplate(id).meta.thumbFrame;
+  return Number.isFinite(frame) ? Math.max(0, Math.round(frame as number)) : DEFAULT_THUMB_FRAME;
+}
+
 // The number of layers a template actually wants. Everything that sizes a
 // sprite pool, a thumbnail's pose list or a demo-slot tally must ask HERE, not
 // read `values.count` directly — a lattice family derives its cell total from

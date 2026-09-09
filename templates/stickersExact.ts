@@ -1,5 +1,4 @@
 import type { Template, TransformCtx } from '@/lib/types';
-import { variant } from './variant';
 
 const BASE = 340;
 const DEG = Math.PI / 180;
@@ -133,14 +132,24 @@ function schedule(count: number, travel: 'in' | 'out', seed: number, loopDuratio
 
   // Sticker 01 is a two-position boomerang. With 17 cards, 36 seconds and a
   // one-second stagger, the shared motion model resolves a two-second action.
-  const baseAction = Math.max(0.01, loopDuration / 2 - (Math.max(1, count) - 1));
+  // Both the action length and the stagger step are calibrated at that 36s
+  // reference, so they must scale together with the ACTUAL clip length: the
+  // catalogue thumbnail always requests a nominal 8s clip, where the unscaled
+  // formula floored baseAction to 0.01s — a 44x smaller window than the
+  // stagger step, so every card's roll collapsed to well under one frame and
+  // it was always caught either fully flat or fully off-canvas. Scaling both
+  // by the same factor keeps their ratio (and so the cascade's shape) intact
+  // at any duration; at the 36s reference durationScale is 1 and this is a
+  // no-op.
+  const durationScale = loopDuration / 36;
+  const baseAction = Math.max(0.01, (36 / 2 - (Math.max(1, count) - 1)) * durationScale);
   const starts: number[] = [];
   const actions: number[] = [];
   let duration = 0.001;
   for (let slot = 0; slot < cards.length; slot++) {
     const random = rng(seed, cards[slot]);
     actions[slot] = Math.max(0.001, baseAction * (0.5 + random.action));
-    starts[slot] = slot === 0 ? 0 : starts[slot - 1] + (0.35 + 1.3 * random.pace);
+    starts[slot] = slot === 0 ? 0 : starts[slot - 1] + (0.35 + 1.3 * random.pace) * durationScale;
     duration = Math.max(duration, starts[slot] + actions[slot]);
   }
   return { order, starts, actions, duration };
@@ -250,6 +259,13 @@ const sticker01: Template = {
     id: 'stickers-01', name: 'Stickers 01', group: 'Stickers', repeatAssets: true,
     engine: 'webgl', cardAspect: 1, isNew: true,
     defaultEasing: { id: 'custom', bezier: [0.8, 0, 0.2, 1] },
+    // The house frame 40 always lands on a settled card (stickerPeelFront pinned
+    // at 0.5, the anchor card's permanent resting value — see the `front`
+    // comment on `schedule`). Frame 103 is where the 36s-reference cascade,
+    // scaled into the catalogue's nominal 8s clip, has one card mid-roll at
+    // front 0.14 — the same value already confirmed to read clearly as a
+    // peeling corner on Stickers 02.
+    thumbFrame: 103,
   },
   controls: sharedControls.map((control) => {
     const defaults: Record<string, any> = {
@@ -280,6 +296,12 @@ const sticker02: Template = {
   meta: {
     id: 'stickers-02', name: 'Stickers 02', group: 'Stickers', repeatAssets: true,
     engine: 'webgl', cardAspect: 1, isNew: true, defaultEasing: { id: 'smooth' },
+    // The idle sticker breathes: its curl runs a triangle over the clip, and the
+    // house frame 40 sits near the flat end of it. `stickerPeelFront` there is
+    // 0.58 — above 0.5, which is where makeStickerRollGeometry has nothing loose
+    // to roll at all, so the thumbnail drew a plain square. Frame 120 is the far
+    // end of the triangle: 0.14, a corner clearly off the paper.
+    thumbFrame: 120,
   },
   controls: sharedControls,
   transform: (frame, index, _count, v, ctx) => {
@@ -303,7 +325,4 @@ const sticker02: Template = {
 export const exactStickerVariants: Template[] = [
   sticker01,
   sticker02,
-  variant(sticker02, 'stickers-03', 'Stickers 03', {
-    count: 9, roll: 21, peelFrom: 'top right', angle: 'random', spread: 37,
-  }),
 ];

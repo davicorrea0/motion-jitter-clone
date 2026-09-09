@@ -25,8 +25,8 @@ import {
   retainThumb3d,
   snapshotThumb,
 } from '@/three3d/thumbScene';
+import { thumbFrameFor } from '@/templates';
 
-const THUMB_FRAME = 40;   // ~1.3s in — the same idle pose the 2D path uses
 const PREVIEW_FPS = 15;   // half the clip rate: 240 frames in 16s, not 8
 
 // Which card currently owns the shared canvas. Module-level on purpose: it is a
@@ -58,6 +58,8 @@ export default function TemplateThumb3D({
   // nothing arriving late to redraw for.
   useEffect(() => {
     let alive = true;
+    // Per preset: 40 unless the template names a frame where its mechanic shows.
+    const THUMB_FRAME = thumbFrameFor(template.meta.id);
     const key = `3d:${template.meta.id}:${THUMB_FRAME}:${frameColour()}`;
     setStill(cachedThumb(key));
     const scheduled = scheduleThumb(key, () => snapshotThumb(template, THUMB_FRAME));
@@ -90,6 +92,7 @@ export default function TemplateThumb3D({
     let startedAt = 0;
     let hovered = false, focused = false, autoVisible = false;
     let resumeQueue: (() => void) | null = null;
+    const THUMB_FRAME = thumbFrameFor(template.meta.id);
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
     let lastDrawn = -1;

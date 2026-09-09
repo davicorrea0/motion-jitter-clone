@@ -66,7 +66,7 @@ if (process.platform === 'win32') {
   };
   manifest['stickersExact.ts'] = {
     exports: ['exactStickerVariants'],
-    ids: ['stickers-01', 'stickers-02', 'stickers-03'],
+    ids: ['stickers-01', 'stickers-02'],
   };
 } else {
   buildSync({

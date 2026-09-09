@@ -24,8 +24,8 @@ import {
   retainThumb2d,
   snapshotThumb2d,
 } from '@/lib/thumbScene2d';
+import { thumbFrameFor } from '@/templates';
 
-const THUMB_FRAME = 40;
 // Half the clip rate, matching the other thumbnail path: 240 frames in 16s.
 const PREVIEW_FPS = 15;
 
@@ -55,6 +55,8 @@ export default function TemplateThumb2DGL({
 
   useEffect(() => {
     let alive = true;
+    // Per preset: 40 unless the template names a frame where its mechanic shows.
+    const THUMB_FRAME = thumbFrameFor(template.meta.id);
     const key = `2d:${template.meta.id}:${THUMB_FRAME}:${frameColour()}`;
     setStill(cachedThumb(key));
     const scheduled = scheduleThumb(key, () => snapshotThumb2d(template, THUMB_FRAME));
@@ -84,6 +86,7 @@ export default function TemplateThumb2DGL({
     let runToken = 0;
     let resumeQueue: (() => void) | null = null;
     let hovered = false, focused = false, autoVisible = false;
+    const THUMB_FRAME = thumbFrameFor(template.meta.id);
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
     const stop = () => {
